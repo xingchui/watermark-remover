@@ -1,0 +1,58 @@
+# 水印去除工具配置
+# 注意：所有路径支持相对路径（相对于程序运行目录）
+
+processing:
+  # 图像处理参数
+  image:
+    inpainting_radius: 3           # 修复半径（像素）
+    algorithm: "telea"             # 修复算法: telea | ns
+    quality: 95                    # 输出JPEG质量（1-100）
+    
+  # 高级修复参数 (多尺度融合)
+  advanced:
+    enabled: true                  # 是否启用高级修复
+    small_kernel: 3                # 小尺度核大小
+    medium_kernel: 5               # 中尺度核大小
+    large_kernel: 7                # 大尺度核大小
+    
+  # 视频处理参数
+  video:
+    max_memory_frames: 100         # 最大内存缓存帧数（超出则使用磁盘缓存）
+    temp_chunk_size: 500           # 视频分块处理大小（帧数）
+    codec: "libx264"               # 视频编码器
+    crf: 18                        # 画质参数（0-51，越小越好，18-23为视觉无损）
+    preset: "medium"               # 编码速度预设: ultrafast|superfast|veryfast|faster|fast|medium|slow|slower|veryslow
+    audio_codec: "aac"             # 音频编码器
+    audio_bitrate: "128k"          # 音频比特率
+    
+  # 多线程配置
+  threading:
+    max_workers: "auto"            # auto = CPU核心数，或指定数字
+    queue_size: 10                 # 任务队列大小
+    
+  # 缓存配置
+  cache:
+    max_memory_size: "512MB"       # 最大内存缓存大小
+    cleanup_on_exit: true          # 程序退出时清理临时文件
+    
+paths:
+  temp_dir: "./temp"               # 临时文件目录
+  log_dir: "./logs"                # 日志目录
+  output_dir: "./output"           # 默认输出目录
+  temp_app_name: "watermark_remover"  # 系统临时目录中的应用子目录名
+  
+ui:
+  theme: "dark"                    # 主题: dark | light
+  language: "zh_CN"                # 界面语言
+  window_title: "水印去除工具"      # 窗口标题
+  window_width: 1200               # 默认窗口宽度
+  window_height: 800               # 默认窗口高度
+  show_preview: true               # 是否显示处理预览
+  
+supported_formats:
+  image:
+    input: [".png", ".jpg", ".jpeg", ".webp", ".bmp"]
+    output: [".png", ".jpg", ".jpeg", ".webp"]
+  video:
+    input: [".mp4", ".avi", ".mov", ".flv", ".mkv"]
+    output: [".mp4", ".avi", ".mov"]
