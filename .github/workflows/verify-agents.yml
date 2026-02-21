@@ -1,0 +1,32 @@
+name: Verify AGENTS.md
+
+on:
+  pull_request:
+    paths:
+      - AGENTS.md
+      - .sisyphus/plans/improve-agents-md.md
+      - tests/**
+  push:
+    paths:
+      - AGENTS.md
+      - .sisyphus/plans/improve-agents-md.md
+      - tests/**
+
+jobs:
+  verify_agents:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+          pip install pytest mypy flake8
+      - name: Run agents verification
+        run: |
+          bash tools/verify_agents.sh
