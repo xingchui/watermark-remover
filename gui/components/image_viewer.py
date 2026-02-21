@@ -97,9 +97,21 @@ class ImageViewer(QWidget):
         self._update_display()
     
     def set_roi(self, x: int, y: int, w: int, h: int):
-        """设置ROI区域"""
+        """设置ROI区域（原始图像坐标）"""
         self._roi_rect = QRect(x, y, w, h)
         self._update_display()
+    
+    def get_display_scale(self) -> float:
+        """获取当前显示比例（用于坐标转换）"""
+        transform = self._get_display_transform()
+        return transform.get('scale', 1.0)
+    
+    def get_original_size(self) -> tuple:
+        """获取原始图像尺寸 (width, height)"""
+        if self._original_image is not None:
+            h, w = self._original_image.shape[:2]
+            return (w, h)
+        return (0, 0)
     
     def clear_roi(self):
         """清除ROI区域"""

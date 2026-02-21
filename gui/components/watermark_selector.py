@@ -37,82 +37,91 @@ class WatermarkSelector(QWidget):
     def _init_ui(self):
         """初始化UI"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(5)
         
-        # 标题
-        title = QLabel("水印区域")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
-        layout.addWidget(title)
-        
-        # ROI输入组
-        roi_group = QGroupBox("手动输入坐标")
+        # ROI输入组 - 更紧凑
+        roi_group = QGroupBox("水印区域坐标")
         roi_layout = QVBoxLayout(roi_group)
+        roi_layout.setSpacing(5)
         
-        # X坐标
+        # X + Y (同一行)
+        xy_layout = QHBoxLayout()
+        xy_layout.setSpacing(8)
+        
         x_layout = QHBoxLayout()
         x_layout.addWidget(QLabel("X:"))
         self._spin_x = QSpinBox()
         self._spin_x.setRange(0, 99999)
         self._spin_x.setValue(0)
+        self._spin_x.setFixedWidth(70)
         self._spin_x.valueChanged.connect(self._on_value_changed)
         x_layout.addWidget(self._spin_x)
-        roi_layout.addLayout(x_layout)
+        xy_layout.addLayout(x_layout)
         
-        # Y坐标
         y_layout = QHBoxLayout()
         y_layout.addWidget(QLabel("Y:"))
         self._spin_y = QSpinBox()
         self._spin_y.setRange(0, 99999)
         self._spin_y.setValue(0)
+        self._spin_y.setFixedWidth(70)
         self._spin_y.valueChanged.connect(self._on_value_changed)
         y_layout.addWidget(self._spin_y)
-        roi_layout.addLayout(y_layout)
+        xy_layout.addLayout(y_layout)
         
-        # 宽度
+        roi_layout.addLayout(xy_layout)
+        
+        # 宽度 + 高度 (同一行)
+        wh_layout = QHBoxLayout()
+        wh_layout.setSpacing(8)
+        
         w_layout = QHBoxLayout()
-        w_layout.addWidget(QLabel("宽度:"))
+        w_layout.addWidget(QLabel("宽:"))
         self._spin_w = QSpinBox()
         self._spin_w.setRange(1, 99999)
         self._spin_w.setValue(100)
+        self._spin_w.setFixedWidth(70)
         self._spin_w.valueChanged.connect(self._on_value_changed)
         w_layout.addWidget(self._spin_w)
-        roi_layout.addLayout(w_layout)
+        wh_layout.addLayout(w_layout)
         
-        # 高度
         h_layout = QHBoxLayout()
-        h_layout.addWidget(QLabel("高度:"))
+        h_layout.addWidget(QLabel("高:"))
         self._spin_h = QSpinBox()
         self._spin_h.setRange(1, 99999)
         self._spin_h.setValue(100)
+        self._spin_h.setFixedWidth(70)
         self._spin_h.valueChanged.connect(self._on_value_changed)
         h_layout.addWidget(self._spin_h)
-        roi_layout.addLayout(h_layout)
+        wh_layout.addLayout(h_layout)
+        
+        roi_layout.addLayout(wh_layout)
         
         layout.addWidget(roi_group)
         
-        # 当前区域显示
-        self._label_roi = QLabel("未选择区域")
-        self._label_roi.setStyleSheet("color: #888888; padding: 5px;")
-        layout.addWidget(self._label_roi)
+        # 当前区域显示 + 按钮组 (紧凑布局)
+        info_layout = QHBoxLayout()
+        info_layout.setSpacing(5)
         
-        # 按钮组
-        button_layout = QHBoxLayout()
+        self._label_roi = QLabel("未选")
+        self._label_roi.setStyleSheet("color: #888; font-size: 11px;")
+        info_layout.addWidget(self._label_roi)
         
         self._btn_apply = QPushButton("应用")
         self._btn_apply.setObjectName("primary_button")
+        self._btn_apply.setFixedWidth(50)
         self._btn_apply.clicked.connect(self.apply_clicked.emit)
-        button_layout.addWidget(self._btn_apply)
+        info_layout.addWidget(self._btn_apply)
         
         self._btn_clear = QPushButton("清除")
+        self._btn_clear.setFixedWidth(50)
         self._btn_clear.clicked.connect(self._on_clear)
-        button_layout.addWidget(self._btn_clear)
+        info_layout.addWidget(self._btn_clear)
         
-        layout.addLayout(button_layout)
+        layout.addLayout(info_layout)
         
-        # 提示文本
-        hint = QLabel("提示：在图像上拖动鼠标可选择水印区域")
-        hint.setStyleSheet("color: #666666; font-size: 11px;")
-        hint.setWordWrap(True)
+        # 提示文本 - 更简洁
+        hint = QLabel("提示: 拖动鼠标选择区域")
+        hint.setStyleSheet("color: #666; font-size: 10px;")
         layout.addWidget(hint)
         
         layout.addStretch()
@@ -182,6 +191,29 @@ class WatermarkSelector(QWidget):
             self._spin_w.value(),
             self._spin_h.value()
         )
+    
+    def clear_roi(self):
+        """清除ROI（不触发信号，用于切换文件时）"""
+        self._roi = None
+        
+        # 阻止信号
+        self._spin_x.blockSignals(True)
+        self._spin_y.blockSignals(True)
+        self._spin_w.blockSignals(True)
+        self._spin_h.blockSignals(True)
+        
+        self._spin_x.setValue(0)
+        self._spin_y.setValue(0)
+        self._spin_w.setValue(100)
+        self._spin_h.setValue(100)
+        
+        self._spin_x.blockSignals(False)
+        self._spin_y.blockSignals(False)
+        self._spin_w.blockSignals(False)
+        self._spin_h.blockSignals(False)
+        
+        self._label_roi.setText("未选")
+        self._label_roi.setStyleSheet("color: #888; font-size: 11px;")
     
     def clear(self):
         """清除选择"""

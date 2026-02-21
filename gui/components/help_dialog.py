@@ -278,6 +278,40 @@ class HelpDialog(QDialog):
                 <p>点击"开始处理"，程序会逐帧处理并保留原始音频。处理时间较长，请耐心等待。</p>
             </div>
 
+            <h2>📦 批处理去水印</h2>
+            <div class="step">
+                <span class="step-number">1</span><strong>添加文件</strong>
+                <p>点击"添加文件"按钮，可选择多个图像或视频文件。支持以下方式：</p>
+                <ul>
+                    <li>一次性选择多个文件（支持 Ctrl/Shift 多选）</li>
+                    <li>选择文件夹，自动识别其中所有支持的媒体文件</li>
+                </ul>
+            </div>
+            <div class="step">
+                <span class="step-number">2</span><strong>设置水印区域</strong>
+                <p>批处理支持两种模式：</p>
+                <ul>
+                    <li><strong>同一ROI模式（默认）：</strong>勾选"使用同一ROI处理所有文件"，只需为第一个文件选择水印区域，其他文件使用相同位置处理</li>
+                    <li><strong>独立ROI模式：</strong>取消勾选"使用同一ROI处理所有文件"，需要为每个文件单独选择水印区域</li>
+                </ul>
+                <p class="tip">💡 <strong>操作技巧：</strong>在文件列表中点击选中某个文件，然后在预览区为其选择水印区域。每个文件的ROI会自动保存。</p>
+            </div>
+            <div class="step">
+                <span class="step-number">3</span><strong>配置处理参数</strong>
+                <ul>
+                    <li><strong>并发数：</strong>同时处理的文件数量，默认为4，可根据电脑配置调整</li>
+                    <li><strong>自适应调度：</strong>根据文件大小自动调整处理优先级</li>
+                </ul>
+            </div>
+            <div class="step">
+                <span class="step-number">4</span><strong>开始批量处理</strong>
+                <p>点击"开始批量处理"按钮，程序会依次处理所有文件。处理进度会在面板上显示。</p>
+            </div>
+            <div class="step">
+                <span class="step-number">5</span><strong>查看结果</strong>
+                <p>处理完成后，所有输出文件会保存在 output 目录中，文件名添加 "_removed" 后缀。</p>
+            </div>
+
             <h1>🎛️ 参数说明</h1>
             
             <table>
@@ -380,7 +414,7 @@ class HelpDialog(QDialog):
             
             <div class="tip" style="margin-top: 30px;">
                 <strong>版本信息</strong><br>
-                水印去除工具 v1.0<br>
+                水印去除工具 v1.2<br>
                 基于 OpenCV + PyQt6 构建
             </div>
         </body>

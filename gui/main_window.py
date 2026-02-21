@@ -26,7 +26,7 @@ from utils import (
     is_supported_image_format, is_supported_video_format,
     get_file_extension, load_image
 )
-from gui.components import ImageViewer, WatermarkSelector, ProgressDialog, HelpDialog
+from gui.components import ImageViewer, WatermarkSelector, ProgressDialog, HelpDialog, BatchPanel
 from gui.threads import ProcessingThread
 
 logger = get_logger()
@@ -47,6 +47,9 @@ class MainWindow(QMainWindow):
         self._current_file: Optional[Path] = None
         self._current_file_type: Optional[str] = None  # 'image' 或 'video'
         self._current_frame: Optional[np.ndarray] = None
+        
+        # 切换文件标志（避免切换时错误保存ROI）
+        self._switching_file = False
         
         # 处理线程
         self._processing_thread: Optional[ProcessingThread] = None
@@ -118,14 +121,18 @@ class MainWindow(QMainWindow):
         # 参数设置组
         params_group = QGroupBox("处理参数")
         params_layout = QVBoxLayout(params_group)
+        params_layout.setSpacing(5)
         
-        # 算法选择
+        # 算法选择 (紧凑)
         algo_layout = QHBoxLayout()
-        algo_layout.addWidget(QLabel("修复算法:"))
+        algo_layout.setSpacing(5)
+        algo_layout.addWidget(QLabel("算法:"))
         self._combo_algorithm = QComboBox()
-        self._combo_algorithm.addItems(["TELEA", "NS", "高级 (多尺度融合)"])
+        self._combo_algorithm.addItems(["TELEA", "NS", "高级"])
         self._combo_algorithm.setCurrentText(get_config('processing.image.algorithm', 'telea').upper())
+        self._combo_algorithm.setFixedWidth(100)
         algo_layout.addWidget(self._combo_algorithm)
+        algo_layout.addStretch()
         params_layout.addLayout(algo_layout)
         
         # AI 设备选择（使用新的layout，避免重复添加）
@@ -155,23 +162,29 @@ class MainWindow(QMainWindow):
         params_layout.addWidget(self._label_ai_status)
         params_layout.addWidget(ai_container)
         
-        # 修复半径
+        # 修复半径 + 输出质量 (同一行，紧凑布局)
+        radius_quality_layout = QHBoxLayout()
+        radius_quality_layout.setSpacing(8)
+        
         radius_layout = QHBoxLayout()
-        radius_layout.addWidget(QLabel("修复半径:"))
+        radius_layout.addWidget(QLabel("半径:"))
         self._spin_radius = QSpinBox()
         self._spin_radius.setRange(1, 50)
         self._spin_radius.setValue(get_config('processing.image.inpainting_radius', 3))
+        self._spin_radius.setFixedWidth(60)
         radius_layout.addWidget(self._spin_radius)
-        params_layout.addLayout(radius_layout)
+        radius_quality_layout.addLayout(radius_layout)
         
-        # 输出质量
         quality_layout = QHBoxLayout()
-        quality_layout.addWidget(QLabel("输出质量:"))
+        quality_layout.addWidget(QLabel("质量:"))
         self._spin_quality = QSpinBox()
         self._spin_quality.setRange(1, 100)
         self._spin_quality.setValue(get_config('processing.image.quality', 95))
+        self._spin_quality.setFixedWidth(60)
         quality_layout.addWidget(self._spin_quality)
-        params_layout.addLayout(quality_layout)
+        radius_quality_layout.addLayout(quality_layout)
+        
+        params_layout.addLayout(radius_quality_layout)
         
         left_layout.addWidget(params_group)
         
@@ -213,6 +226,14 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self._btn_help)
 
         left_layout.addWidget(action_group)
+        
+        # 批量处理面板
+        self._batch_panel = BatchPanel()
+        self._batch_panel.files_selected.connect(self._on_batch_files_selected)
+        self._batch_panel.batch_start.connect(self._on_batch_start)
+        self._batch_panel.file_preview.connect(self._on_batch_file_preview)
+        self._batch_panel.file_selection_changed.connect(self._on_batch_file_selected)
+        left_layout.addWidget(self._batch_panel)
         
         # 进度条
         self._progress_bar = QProgressBar()
@@ -361,12 +382,38 @@ class MainWindow(QMainWindow):
     def _on_viewer_roi_selected(self, x: int, y: int, w: int, h: int):
         """图像查看器ROI选择处理"""
         self._watermark_selector.set_roi(x, y, w, h)
-        self._log(f"选择区域: ({x}, {y}) {w}x{h}")
+        # 获取原始图像尺寸用于调试
+        orig_w, orig_h = self._image_viewer.get_original_size()
+        display_scale = self._image_viewer.get_display_scale()
+        self._log(f"选择区域: ({x}, {y}) {w}x{h} [原始尺寸: {orig_w}x{orig_h}, 显示比例: {display_scale:.2f}]")
     
     def _on_roi_changed(self, x: int, y: int, w: int, h: int):
         """ROI改变处理"""
         # 更新图像查看器的ROI显示
         self._image_viewer.set_roi(x, y, w, h)
+        
+        # 切换文件时不保存ROI
+        if self._switching_file:
+            return
+        
+        # 保存当前选中文件的ROI
+        self._save_current_file_roi()
+    
+    def _save_current_file_roi(self):
+        """保存当前选中文件的ROI"""
+        # 获取当前批量面板选中的文件
+        selected_items = self._batch_panel.file_list.selectedItems()
+        if selected_items:
+            file_path = selected_items[0].data(Qt.ItemDataRole.UserRole)
+            if file_path:
+                roi = self._watermark_selector.get_roi()
+                # 获取图像原始尺寸用于验证
+                if self._current_frame is not None:
+                    orig_h, orig_w = self._current_frame.shape[:2]
+                    self._log(f"保存ROI: {Path(file_path).name} -> {roi} [图像: {orig_w}x{orig_h}]")
+                else:
+                    self._log(f"保存ROI: {Path(file_path).name} -> {roi}")
+                self._batch_panel.set_file_roi(file_path, roi)
     
     def _on_apply_roi(self):
         """应用ROI"""
@@ -374,6 +421,8 @@ class MainWindow(QMainWindow):
         if roi:
             self._image_viewer.set_roi(*roi)
             self._log(f"应用区域: {roi}")
+            # 保存ROI到当前文件
+            self._save_current_file_roi()
     
     def _on_clear_roi(self):
         """清除ROI"""
@@ -512,6 +561,14 @@ class MainWindow(QMainWindow):
     
     def _on_task_progress(self, task_id: str, current: int, total: int, message: str):
         """任务进度处理"""
+        # 检查是否是批量任务
+        if hasattr(self, '_batch_task_ids') and task_id in self._batch_task_ids:
+            # 批量任务进度 - 可以在这里更新
+            if message:
+                self._status_bar.showMessage(f"批量处理: {message}")
+            return
+        
+        # 单文件任务进度
         if hasattr(self, '_current_task_id') and task_id == self._current_task_id:
             progress = int(current * 100 / total) if total > 0 else current
             self._progress_bar.setValue(progress)
@@ -520,6 +577,25 @@ class MainWindow(QMainWindow):
     
     def _on_task_completed(self, task_id: str, output_path: str):
         """任务完成处理"""
+        # 检查是否是批量任务
+        if hasattr(self, '_batch_task_ids') and task_id in self._batch_task_ids:
+            self._batch_task_ids.remove(task_id)
+            self._log(f"[OK] 任务完成: {output_path}")
+            
+            # 更新进度
+            total = len(self._batch_task_ids) + 1  # 包含已完成的任务
+            completed = total - len(self._batch_task_ids)
+            self._batch_panel.set_progress(completed, total, f"已完成 {completed}/{total}")
+            
+            # 检查是否所有批量任务都完成
+            if not self._batch_task_ids:
+                self._log("所有批量任务已完成")
+                self._batch_panel.set_running(False)
+                self._btn_process.setEnabled(True)
+                self._btn_preview.setEnabled(True)
+            return
+        
+        # 单文件任务处理
         if hasattr(self, '_current_task_id') and task_id == self._current_task_id:
             self._progress_bar.setValue(100)
             self._log(f"[OK] 处理完成: {output_path}")
@@ -534,6 +610,21 @@ class MainWindow(QMainWindow):
     
     def _on_task_failed(self, task_id: str, error_message: str):
         """任务失败处理"""
+        # 检查是否是批量任务
+        if hasattr(self, '_batch_task_ids') and task_id in self._batch_task_ids:
+            self._batch_task_ids.remove(task_id)
+            logger.error(f"批量任务失败: {error_message}")
+            self._log(f"[FAILED] 任务失败: {error_message}")
+            
+            # 检查是否所有批量任务都完成（失败也算完成）
+            if not self._batch_task_ids:
+                self._log("所有批量任务已完成（部分失败）")
+                self._batch_panel.set_running(False)
+                self._btn_process.setEnabled(True)
+                self._btn_preview.setEnabled(True)
+            return
+        
+        # 单文件任务处理
         if hasattr(self, '_current_task_id') and task_id == self._current_task_id:
             logger.error(f"任务失败: {error_message}")
             self._log(f"[FAILED] 处理失败: {error_message}")
@@ -558,6 +649,239 @@ class MainWindow(QMainWindow):
         # 滚动到底部
         scrollbar = self._text_log.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+    
+    def _on_batch_files_selected(self, files: list):
+        """批处理文件选择回调"""
+        self._log(f"已选择 {len(files)} 个文件用于批量处理")
+    
+    def _on_batch_file_preview(self, file_path: str):
+        """批处理文件预览回调"""
+        from pathlib import Path
+        from utils import load_image, is_supported_image_format, is_supported_video_format
+        
+        file_path = Path(file_path)
+        
+        try:
+            if is_supported_image_format(file_path):
+                # 加载图像预览
+                image = load_image(str(file_path))
+                self._current_frame = image
+                self._image_viewer.set_image(image)
+                
+                # 更新水印选择器
+                height, width = image.shape[:2]
+                self._watermark_selector.set_image_size(width, height)
+                
+                self._log(f"预览图像: {file_path.name} ({width}x{height})")
+                
+            elif is_supported_video_format(file_path):
+                # 加载视频第一帧预览
+                frame = self.video_service.extract_frame(file_path, 0)
+                self._current_frame = frame
+                self._image_viewer.set_image(frame)
+                
+                # 获取视频信息
+                info = self.video_service.get_video_info(file_path)
+                
+                # 更新水印选择器
+                self._watermark_selector.set_image_size(info['width'], info['height'])
+                
+                self._log(f"预览视频: {file_path.name}")
+                self._log(f"  分辨率: {info['width']}x{info['height']}")
+            
+            # 启用选择模式
+            self._image_viewer.enable_selection(True)
+            self._status_bar.showMessage(f"预览: {file_path.name}")
+            
+        except Exception as e:
+            logger.error(f"预览失败: {e}")
+            self._log(f"[ERROR] 预览失败: {e}")
+    
+    def _on_batch_file_selected(self, file_path: str):
+        """批量文件列表中选中某个文件"""
+        from pathlib import Path
+        from utils import load_image, is_supported_image_format, is_supported_video_format
+        
+        # 设置切换文件标志，避免触发ROI保存
+        self._switching_file = True
+        
+        file_path = Path(file_path)
+        
+        try:
+            width, height = 0, 0
+            
+            if is_supported_image_format(file_path):
+                # 加载图像
+                image = load_image(str(file_path))
+                self._current_frame = image
+                self._image_viewer.set_image(image)
+                
+                # 获取尺寸
+                height, width = image.shape[:2]
+                self._watermark_selector.set_image_size(width, height)
+                
+                self._log(f"选中图像: {file_path.name} ({width}x{height})")
+                
+            elif is_supported_video_format(file_path):
+                # 加载视频第一帧
+                frame = self.video_service.extract_frame(file_path, 0)
+                self._current_frame = frame
+                self._image_viewer.set_image(frame)
+                
+                # 获取视频信息
+                info = self.video_service.get_video_info(file_path)
+                width, height = info['width'], info['height']
+                self._watermark_selector.set_image_size(width, height)
+                
+                self._log(f"选中视频: {file_path.name}")
+            
+            # 加载或清除ROI
+            self._load_roi_for_file(str(file_path))
+            
+            # 启用选择模式
+            self._image_viewer.enable_selection(True)
+            self._status_bar.showMessage(f"选中: {file_path.name}")
+            
+        except Exception as e:
+            logger.error(f"加载文件失败: {e}")
+            self._log(f"[ERROR] 加载失败: {e}")
+        finally:
+            # 重置切换文件标志
+            self._switching_file = False
+    
+    def _load_roi_for_file(self, file_path: str):
+        """加载文件对应的ROI"""
+        saved_roi = self._batch_panel.get_file_roi(file_path)
+        if saved_roi:
+            self._watermark_selector.set_roi(*saved_roi)
+            self._image_viewer.set_roi(*saved_roi)
+            self._log(f"加载文件ROI: {saved_roi}")
+        else:
+            # 使用无信号清除方法
+            self._watermark_selector.clear_roi()
+            self._image_viewer.clear_roi()
+    
+    def _on_batch_start(self, config: dict):
+        """开始批量处理"""
+        files = config.get("files", [])
+        if not files:
+            QMessageBox.warning(self, "警告", "请先选择要处理的文件")
+            return
+        
+        # 获取参数
+        algorithm_text = self._combo_algorithm.currentText()
+        if '高级' in algorithm_text:
+            algorithm = algorithm_text
+        else:
+            algorithm = algorithm_text.lower()
+        radius = self._spin_radius.value()
+        quality = self._spin_quality.value()
+        max_workers = config.get("max_workers", 4)
+        
+        # 获取配置
+        same_roi = config.get("same_roi", True)
+        file_rois = config.get("file_rois", {})
+        
+        # 检查是否有文件设置了ROI
+        files_with_roi = [f for f in files if file_rois.get(f)]
+        
+        roi = None  # 默认值
+        if same_roi:
+            # 使用同一 ROI
+            roi = self._watermark_selector.get_roi()
+            if not roi and not files_with_roi:
+                QMessageBox.warning(self, "警告", "请先选择水印区域或为文件设置ROI")
+                return
+            self._log(f"开始批量处理 {len(files)} 个文件")
+            self._log(f"  模式: 同一ROI, 并发数: {max_workers}")
+        else:
+            # 每个文件独立ROI
+            if files_with_roi:
+                self._log(f"开始批量处理 {len(files)} 个文件")
+                self._log(f"  模式: 独立ROI (已设置: {len(files_with_roi)}个), 并发数: {max_workers}")
+            else:
+                QMessageBox.warning(self, "警告", "未勾选同一ROI时，请先为各文件设置水印区域")
+                return
+        
+        # 禁用单文件处理按钮
+        self._btn_process.setEnabled(False)
+        self._btn_preview.setEnabled(False)
+        
+        # 设置批量面板状态
+        self._batch_panel.set_running(True)
+        
+        # 处理批量文件
+        self._process_batch_files(files, same_roi, roi, file_rois, algorithm, radius, quality)
+    
+    def _process_batch_files(self, files: list, same_roi: bool, common_roi: tuple, 
+                             file_rois: dict, algorithm: str, radius: int, quality: int):
+        """逐个处理批量文件"""
+        output_dir = get_config('paths.output_dir', './output')
+        ensure_dir(output_dir)
+        
+        from utils.file_utils import generate_output_path
+        from pathlib import Path
+        
+        total = len(files)
+        self._batch_panel.set_progress(0, total, "准备处理...")
+        
+        # 记录已提交的任务ID
+        self._batch_task_ids = []
+        
+        for idx, file_path in enumerate(files):
+            try:
+                input_path = Path(file_path)
+                output_path = generate_output_path(input_path, output_dir, suffix="_removed")
+                
+                # 获取该文件对应的ROI
+                if same_roi:
+                    # 使用同一ROI
+                    file_roi = common_roi
+                else:
+                    # 使用文件独立ROI
+                    file_roi = file_rois.get(file_path)
+                
+                # 跳过没有ROI的文件
+                if not file_roi:
+                    self._log(f"跳过 (无ROI): {input_path.name}")
+                    continue
+                
+                # 判断文件类型
+                if is_supported_image_format(input_path):
+                    task_id = self._processing_thread.submit_image_task(
+                        str(input_path),
+                        str(output_path),
+                        file_roi,
+                        algorithm=algorithm,
+                        radius=radius,
+                        quality=quality
+                    )
+                    self._batch_task_ids.append(task_id)
+                elif is_supported_video_format(input_path):
+                    task_id = self._processing_thread.submit_video_task(
+                        str(input_path),
+                        str(output_path),
+                        file_roi,
+                        algorithm=algorithm,
+                        radius=radius
+                    )
+                    self._batch_task_ids.append(task_id)
+                
+                self._log(f"已提交: {input_path.name} (ROI: {file_roi})")
+                
+            except Exception as e:
+                self._log(f"提交失败 {file_path}: {e}")
+                
+            except Exception as e:
+                self._log(f"提交失败 {file_path}: {e}")
+            
+            # 更新进度 - 只是提交进度，不是完成进度
+            self._batch_panel.set_progress(idx + 1, total, f"已提交 {idx + 1}/{total}")
+        
+        self._log(f"批量处理任务已全部提交，共 {len(self._batch_task_ids)} 个任务")
+        
+        # 不再立即设置 running=False，而是等待任务完成
+        # 通过 task_completed 和 task_failed 信号来跟踪
     
     def closeEvent(self, event):
         """关闭事件"""
